@@ -1,86 +1,102 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
-	"fmt"
-	"image"
-	"image/jpeg"
+	"encoding/json"
 	"log"
+	"mime"
+	"net/http"
 	"os"
-	"os/exec"
+	"path"
+	"sort"
+	"strings"
+	"time"
+
+	assets "./assets-go"
+	"github.com/julienschmidt/httprouter"
 )
 
+var (
+	PUBLIC  = "public"
+	BUILD   = strings.Trim(string(assets.MustAsset("_BUILD")), "\n ")
+	VERSION = strings.Trim(string(assets.MustAsset("_VERSION")), "\n ")
+)
+
+type Config struct {
+	Address string
+	URLRoot string
+
+	FFmpegSource  string
+	FFmpegFilters string
+}
+
+type AssetServeHandler struct {
+	name string
+}
+
+func (h *AssetServeHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(h.name)))
+	http.ServeContent(w, req, h.name, time.Now(), bytes.NewReader(assets.MustAsset(h.name)))
+}
+
 func main() {
-	stream, err := ffmpeg("rtsp://0.0.0.0/Streaming/channels/1", "framerate=2, scale=w=800:h=600, boxblur=2:2")
-	if err != nil {
+	confFile := "config.json"
+	if len(os.Args) > 1 {
+		confFile = os.Args[1]
+	}
+	log.Printf("Using config file %q", confFile)
+	var config Config
+	if in, err := os.Open(confFile); err != nil {
+		log.Fatal(err)
+	} else if err := json.NewDecoder(in).Decode(&config); err != nil {
 		log.Fatal(err)
 	}
 
-	i := 0
-	for img := range stream {
-		i++
-		fd, err := os.Create(fmt.Sprintf("img-%d.jpeg", i))
-		if err != nil {
-			log.Fatal(err)
-		}
-		jpeg.Encode(fd, img, nil)
-		fd.Close()
+	r := httprouter.New()
+	static := map[string][]string{
+		"js":  []string{},
+		"css": []string{},
 	}
 
+	for _, file := range assets.AssetNames() {
+		if !strings.HasPrefix(file, PUBLIC) {
+			continue
+		}
+		urlPath := strings.TrimPrefix(file, PUBLIC)
+		r.Handler("GET", urlPath, &AssetServeHandler{name: file})
+
+		switch path.Ext(file) {
+		case ".css":
+			static["css"] = append(static["css"], urlPath)
+		case ".js":
+			static["js"] = append(static["js"], urlPath)
+		}
+	}
+	for _, a := range static {
+		sort.Strings(a)
+	}
+
+	r.Handler("GET", "/", http.RedirectHandler("/hoofdruimte", http.StatusFound))
+	r.HandlerFunc("GET", "/hoofdruimte", htMainPage)
+	r.HandlerFunc("GET", "/hoofdruimte.jpg", htStreamMjpeg)
+
+	if BUILD == "release" {
+		r.NotFound = http.RedirectHandler("/", http.StatusTemporaryRedirect)
+	}
+
+	log.Printf("Now accepting HTTP connections on %v", config.Address)
+	server := &http.Server{
+		Addr:           config.Address,
+		Handler:        r,
+		ReadTimeout:    10 * time.Second,
+		WriteTimeout:   10 * time.Second,
+		MaxHeaderBytes: 1 << 20,
+	}
+	log.Fatal(server.ListenAndServe())
 }
 
-func ffmpeg(source string, video_filters string) (<-chan image.Image, error) {
-	cmd := exec.Command(
-		"ffmpeg",
-		"-i", source,
-		"-an",
-		"-vf", video_filters,
-		"-y",
-		"-f", "image2",
-		"-vcodec", "mjpeg",
-		"-updatefirst", "1",
-		"-",
-	)
-	channel := make(chan image.Image, 0)
+func htMainPage(http.ResponseWriter, *http.Request) {
+}
 
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	go func() {
-		scanner := bufio.NewScanner(stdout)
-		scanner.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
-			if len(data) <= 3 {
-				return 0, nil, nil
-			}
-			if !bytes.Equal(data[0:3], []byte{0xff, 0xd8, 0xff}) {
-				return 0, nil, fmt.Errorf("Uprocessed data found in stream")
-			}
-			for i := range data[:len(data)-2] {
-				if bytes.Equal(data[i:i+2], []byte{0xff, 0xd9}) {
-					return i + 2, data[:i+2], nil
-				}
-			}
-			return 0, nil, nil
-		})
-
-		for scanner.Scan() {
-			img, err := jpeg.Decode(bytes.NewReader(scanner.Bytes()))
-			if err != nil {
-				// When FFmpeg has connected it may not have received a
-				// keyframe yet, which somehow results in broken frames.
-				continue
-			}
-			select {
-			case channel <- img:
-			default:
-			}
-		}
-	}()
-
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-	return channel, nil
+func htStreamMjpeg(http.ResponseWriter, *http.Request) {
 }
