@@ -3,6 +3,10 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"html/template"
+	"image/jpeg"
+	"io"
 	"log"
 	"mime"
 	"net/http"
@@ -78,7 +82,7 @@ func main() {
 
 	r.Handler("GET", "/", http.RedirectHandler("/hoofdruimte", http.StatusFound))
 	r.HandlerFunc("GET", "/hoofdruimte", htMainPage)
-	r.HandlerFunc("GET", "/hoofdruimte.jpg", htStreamMjpeg)
+	r.HandlerFunc("GET", "/hoofdruimte.mjpg", htStreamMjpeg(&config))
 
 	if BUILD == "release" {
 		r.NotFound = http.RedirectHandler("/", http.StatusTemporaryRedirect)
@@ -88,15 +92,43 @@ func main() {
 	server := &http.Server{
 		Addr:           config.Address,
 		Handler:        r,
-		ReadTimeout:    10 * time.Second,
-		WriteTimeout:   10 * time.Second,
+		ReadTimeout:    time.Hour,
+		WriteTimeout:   time.Hour,
 		MaxHeaderBytes: 1 << 20,
 	}
 	log.Fatal(server.ListenAndServe())
 }
 
-func htMainPage(http.ResponseWriter, *http.Request) {
+func htMainPage(res http.ResponseWriter, req *http.Request) {
+	tmpl := template.Must(template.New("main").Parse(string(assets.MustAsset("view/main.html"))))
+	if err := tmpl.Execute(res, map[string]interface{}{}); err != nil {
+		log.Println(err)
+	}
 }
 
-func htStreamMjpeg(http.ResponseWriter, *http.Request) {
+func htStreamMjpeg(config *Config) func(res http.ResponseWriter, req *http.Request) {
+	return func(res http.ResponseWriter, req *http.Request) {
+		const BOUNDARY = "--jpegBoundary"
+		res.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary="+BOUNDARY)
+		res.WriteHeader(http.StatusOK)
+
+		stream, err := FFmpegStream(config.FFmpegSource, config.FFmpegFilters)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+
+		var buf bytes.Buffer
+		for img := range stream {
+			buf.Reset()
+			jpeg.Encode(&buf, img, nil)
+			res.Write([]byte(BOUNDARY))
+			res.Write([]byte("Content-Type: image/jpeg\n"))
+			res.Write([]byte(fmt.Sprintf("Content-Length: %d\n\n", buf.Len())))
+			if _, err := io.Copy(res, bytes.NewReader(buf.Bytes())); err != nil {
+				log.Println(err)
+				return
+			}
+		}
+	}
 }
