@@ -1,0 +1,5 @@
+/bin
+/lib
+/src/assets/_*
+/src/assets-go
+/config.json
