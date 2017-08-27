@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"log"
 	"mime"
@@ -13,8 +14,11 @@ import (
 	"strings"
 	"time"
 
-	assets "./assets-go"
 	"github.com/julienschmidt/httprouter"
+	"github.com/yosssi/gmq/mqtt"
+	"github.com/yosssi/gmq/mqtt/client"
+
+	assets "./assets-go"
 )
 
 var (
@@ -82,9 +86,32 @@ func main() {
 		return
 	}
 
+	mqttc := client.New(&client.Options{
+		ErrorHandler: func(err error) {
+			log.Println(err)
+		},
+	})
+	if err := mqttc.Connect(&client.ConnectOptions{
+		Network:  "tcp",
+		Address:  "mqtt.bitlair.nl:1883",
+		ClientID: []byte("koekeloeren"),
+	}); err != nil {
+		log.Fatal(err)
+	}
+	numViewersCallback := func(num int) error {
+		return mqttc.Publish(&client.PublishOptions{
+			QoS:       mqtt.QoS1, // Setting QoS1 ensures that the message wil reach the broker.
+			Retain:    true,
+			TopicName: []byte("bitlair/test/koekeloeren"),
+			Message:   []byte(fmt.Sprintf("%d", num)),
+		})
+	}
+
 	r.Handler("GET", "/", http.RedirectHandler("/hoofdruimte", http.StatusFound))
 	r.HandlerFunc("GET", "/hoofdruimte", htMainPage)
-	r.Handler("GET", "/hoofdruimte.mjpg", NewStreamHandler(stream))
+	r.Handler("GET", "/hoofdruimte.mjpg", NewStreamHandler(stream, &StreamHandlerOptions{
+		NumViewersCallback: numViewersCallback,
+	}))
 	if BUILD == "release" {
 		r.NotFound = http.RedirectHandler("/", http.StatusTemporaryRedirect)
 	}
