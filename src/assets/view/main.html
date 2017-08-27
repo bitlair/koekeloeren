@@ -4,8 +4,71 @@
 	<meta http-equiv="content-type" content="text/html; charset=utf-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0" />
 	<title>Koekloeren bij Bitlair</title>
+
+	<style>
+		* {
+			font-family: Liberation Sans, Arial;
+		}
+
+		html, body {
+			margin: 0;
+			padding: 0;
+			background-color: #333;
+		}
+
+		header {
+			padding: 8px calc(8px + (100% - 800px) / 2);
+		}
+
+		header img {
+			height: 68px;
+		}
+
+		.stream-view {
+			width: 100%;
+			padding: 4px 0;
+			background-color: #f60;
+			text-align: center;
+		}
+
+		.stream-view img {
+			width: 800px;
+			height: 600px;
+		}
+
+		.stream-view .spacestate {
+			margin: 0;
+			color: #333;
+		}
+
+		.stream-view .spacestate.closed:after {
+			content: "Bitlair is gesloten";
+		}
+
+		.stream-view .spacestate.open:after {
+			text-decoration: underline;
+			content: "Bitlair is open!";
+		}
+	</style>
+	<script>
+		var xhttp = new XMLHttpRequest();
+		xhttp.onreadystatechange = function() {
+			if (this.readyState == 4 && this.status == 200) {
+				var spaceOpen = JSON.parse(this.responseText).state.open;
+				document.querySelector('.spacestate').classList.add(spaceOpen ? 'open' : 'closed');
+			}
+		};
+		xhttp.open('GET', 'https://bitlair.nl/statejson', true);
+		xhttp.send();
+	</script>
 </head>
 <body>
-	<img src="/space.mjpg?token={{ .token }}" />
+	<header>
+		<img src="/logo.svg" />
+	</header>
+	<section class="stream-view">
+		<img src="/space.mjpg?token={{ .token }}" />
+		<h2 class="spacestate"></h2>
+	</section>
 </body>
 </html>
