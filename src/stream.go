@@ -14,6 +14,7 @@ func FFmpegStream(source string, videoFilters string) (<-chan image.Image, error
 	cmd := exec.Command(
 		"ffmpeg",
 		"-i", source,
+		"-q:v", "1",
 		"-an",
 		"-vf", videoFilters,
 		"-y",
