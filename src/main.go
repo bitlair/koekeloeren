@@ -35,6 +35,7 @@ type Config struct {
 	URLRoot string
 
 	ViewLimitSeconds int
+	NumViewersTopic  string
 	AfterLimitImage  string
 	FFmpegSource     string
 	FFmpegFilters    string
@@ -155,7 +156,7 @@ func main() {
 		return mqttc.Publish(&client.PublishOptions{
 			QoS:       mqtt.QoS1, // Setting QoS1 ensures that the message wil reach the broker.
 			Retain:    true,
-			TopicName: []byte("bitlair/test/koekeloeren"),
+			TopicName: []byte(config.NumViewersTopic),
 			Message:   []byte(fmt.Sprintf("%d", num)),
 		})
 	}
