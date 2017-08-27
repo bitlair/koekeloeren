@@ -170,9 +170,9 @@ func main() {
 
 	antiIndexer := NewAntiIndexer()
 
-	r.Handler("GET", "/", http.RedirectHandler("/hoofdruimte", http.StatusFound))
-	r.HandlerFunc("GET", "/hoofdruimte", htMainPage(antiIndexer))
-	r.Handler("GET", "/hoofdruimte.mjpg", antiIndexer.Protect(NewStreamHandler(stream, &StreamHandlerOptions{
+	r.Handler("GET", "/", http.RedirectHandler("/space", http.StatusFound))
+	r.HandlerFunc("GET", "/space", htMainPage(antiIndexer))
+	r.Handler("GET", "/space.mjpg", antiIndexer.Protect(NewStreamHandler(stream, &StreamHandlerOptions{
 		NumViewersCallback:     numViewersCallback,
 		ViewingAllowedCallback: viewingAllowedCallback,
 		ViewLimit:              time.Second * time.Duration(config.ViewLimitSeconds),
