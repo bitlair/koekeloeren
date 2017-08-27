@@ -30,6 +30,7 @@ func FFmpegStream(source string, videoFilters string) (<-chan image.Image, error
 		return nil, err
 	}
 	go func() {
+		defer close(channel)
 		scanner := bufio.NewScanner(stdout)
 		scanner.Buffer([]byte{}, 1<<22) // 4MiB
 		scanner.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
