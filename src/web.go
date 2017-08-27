@@ -70,7 +70,7 @@ func (handler *StreamHandler) ServeHTTP(res http.ResponseWriter, req *http.Reque
 	id := handler.enum
 	ch := make(chan []byte, 1)
 	if handler.options.NumViewersCallback != nil {
-		if err := handler.options.NumViewersCallback(len(handler.consumers)); err != nil {
+		if err := handler.options.NumViewersCallback(len(handler.consumers) + 1); err != nil {
 			res.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprintf(res, "%v", err)
 			close(ch)
