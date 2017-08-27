@@ -209,7 +209,7 @@ func htMainPage(antiIndexer *AntiIndexer) func(res http.ResponseWriter, req *htt
 	return func(res http.ResponseWriter, req *http.Request) {
 		tmpl := template.Must(template.New("main").Parse(string(assets.MustAsset("view/main.html"))))
 		if err := tmpl.Execute(res, map[string]interface{}{
-			"token": antiIndexer.Token(),
+			"token": antiIndexer.Token(req),
 		}); err != nil {
 			log.Println(err)
 		}

@@ -9,6 +9,7 @@ import (
 	"image"
 	"image/jpeg"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -134,9 +135,9 @@ func (handler *StreamHandler) ServeHTTP(res http.ResponseWriter, req *http.Reque
 
 // Middleware for protection against indexing webspiders.
 //
-// Protection works by requiring a hash based upon the current date and a salt
-// to be present in the stream request. This causes any links indexed to stop
-// working after midnight.
+// Protection works by requiring a hash based upon the current date, request's
+// IP address  and a salt to be present in the stream request. This causes any
+// links indexed to stop working after midnight.
 type AntiIndexer struct {
 	Denied http.Handler
 
@@ -153,7 +154,7 @@ func NewAntiIndexer() *AntiIndexer {
 
 func (ai *AntiIndexer) Protect(handler http.Handler) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-		if req.FormValue("token") == ai.Token() {
+		if req.FormValue("token") == ai.Token(req) {
 			handler.ServeHTTP(res, req)
 		} else if ai.Denied != nil {
 			ai.Denied.ServeHTTP(res, req)
@@ -163,8 +164,9 @@ func (ai *AntiIndexer) Protect(handler http.Handler) http.Handler {
 	})
 }
 
-func (ai *AntiIndexer) Token() string {
+func (ai *AntiIndexer) Token(req *http.Request) string {
 	hash := sha512.New()
+	hash.Write([]byte(req.RemoteAddr[:strings.LastIndex(req.RemoteAddr, ":")]))
 	hash.Write([]byte(time.Now().Format("2006-01-02")))
 	hash.Write(ai.salt)
 	return base64.RawURLEncoding.EncodeToString(hash.Sum([]byte{}))
