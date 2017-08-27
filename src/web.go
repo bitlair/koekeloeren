@@ -26,6 +26,8 @@ type StreamHandlerOptions struct {
 	// A function which is called when the number of total stream consumers
 	// changes. It may return an error to prevent the stream from being viewed.
 	NumViewersCallback func(int) error
+	// A function called to check whether playback of the stream is allowed.
+	ViewingAllowedCallback func() bool
 	// The duration after which the stream will be closed.
 	ViewLimit time.Duration
 }
@@ -93,6 +95,9 @@ func (handler *StreamHandler) ServeHTTP(res http.ResponseWriter, req *http.Reque
 	viewStart := time.Now()
 	for imgBuf := range ch {
 		if handler.options.ViewLimit != 0 && time.Since(viewStart) >= handler.options.ViewLimit {
+			break
+		}
+		if cb := handler.options.ViewingAllowedCallback; cb != nil && !cb() {
 			break
 		}
 

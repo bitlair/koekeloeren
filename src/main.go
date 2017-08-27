@@ -34,6 +34,11 @@ type Config struct {
 	ViewLimitSeconds int
 	FFmpegSource     string
 	FFmpegFilters    string
+
+	MQTTDeny []struct {
+		Topic string
+		Value string
+	}
 }
 
 type AssetServeHandler struct {
@@ -99,6 +104,29 @@ func main() {
 	}); err != nil {
 		log.Fatal(err)
 	}
+
+	denyBits := make([]bool, len(config.MQTTDeny))
+	subReqs := make([]*client.SubReq, len(config.MQTTDeny))
+	for i, entry := range config.MQTTDeny {
+		func(i int, topic, value string) {
+			subReqs[i] = &client.SubReq{
+				TopicFilter: []byte(topic),
+				QoS:         mqtt.QoS1,
+				Handler: func(topicName, message []byte) {
+					denyBits[i] = string(message) == value
+				},
+			}
+			log.Printf("Added MQTT deny rule: %s == %q", topic, value)
+		}(i, entry.Topic, entry.Value)
+	}
+	if len(subReqs) > 0 {
+		if err := mqttc.Subscribe(&client.SubscribeOptions{
+			SubReqs: subReqs,
+		}); err != nil {
+			log.Fatal(err)
+		}
+	}
+
 	numViewersCallback := func(num int) error {
 		return mqttc.Publish(&client.PublishOptions{
 			QoS:       mqtt.QoS1, // Setting QoS1 ensures that the message wil reach the broker.
@@ -107,14 +135,22 @@ func main() {
 			Message:   []byte(fmt.Sprintf("%d", num)),
 		})
 	}
+	viewingAllowedCallback := func() bool {
+		denied := false
+		for _, b := range denyBits {
+			denied = denied || b
+		}
+		return !denied
+	}
 
 	antiIndexer := NewAntiIndexer()
 
 	r.Handler("GET", "/", http.RedirectHandler("/hoofdruimte", http.StatusFound))
 	r.HandlerFunc("GET", "/hoofdruimte", htMainPage(antiIndexer))
 	r.Handler("GET", "/hoofdruimte.mjpg", antiIndexer.Protect(NewStreamHandler(stream, &StreamHandlerOptions{
-		NumViewersCallback: numViewersCallback,
-		ViewLimit:          time.Second * time.Duration(config.ViewLimitSeconds),
+		NumViewersCallback:     numViewersCallback,
+		ViewingAllowedCallback: viewingAllowedCallback,
+		ViewLimit:              time.Second * time.Duration(config.ViewLimitSeconds),
 	})))
 	if BUILD == "release" {
 		r.NotFound = http.RedirectHandler("/", http.StatusTemporaryRedirect)
