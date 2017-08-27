@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/sha512"
+	"encoding/base64"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -102,4 +105,42 @@ func (handler *StreamHandler) ServeHTTP(res http.ResponseWriter, req *http.Reque
 		}
 		fmt.Fprintf(res, "%s\n", BOUNDARY)
 	}
+}
+
+// Middleware for protection against indexing webspiders.
+//
+// Protection works by requiring a hash based upon the current date and a salt
+// to be present in the stream request. This causes any links indexed to stop
+// working after midnight.
+type AntiIndexer struct {
+	Denied http.Handler
+
+	salt []byte
+}
+
+func NewAntiIndexer() *AntiIndexer {
+	ai := &AntiIndexer{
+		salt: make([]byte, 32),
+	}
+	rand.Read(ai.salt)
+	return ai
+}
+
+func (ai *AntiIndexer) Protect(handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		if req.FormValue("token") == ai.Token() {
+			handler.ServeHTTP(res, req)
+		} else if ai.Denied != nil {
+			ai.Denied.ServeHTTP(res, req)
+		} else {
+			http.Error(res, "Invalid token", http.StatusUnauthorized)
+		}
+	})
+}
+
+func (ai *AntiIndexer) Token() string {
+	hash := sha512.New()
+	hash.Write([]byte(time.Now().Format("2006-01-02")))
+	hash.Write(ai.salt)
+	return base64.RawURLEncoding.EncodeToString(hash.Sum([]byte{}))
 }

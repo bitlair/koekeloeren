@@ -108,12 +108,14 @@ func main() {
 		})
 	}
 
+	antiIndexer := NewAntiIndexer()
+
 	r.Handler("GET", "/", http.RedirectHandler("/hoofdruimte", http.StatusFound))
-	r.HandlerFunc("GET", "/hoofdruimte", htMainPage)
-	r.Handler("GET", "/hoofdruimte.mjpg", NewStreamHandler(stream, &StreamHandlerOptions{
+	r.HandlerFunc("GET", "/hoofdruimte", htMainPage(antiIndexer))
+	r.Handler("GET", "/hoofdruimte.mjpg", antiIndexer.Protect(NewStreamHandler(stream, &StreamHandlerOptions{
 		NumViewersCallback: numViewersCallback,
 		ViewLimit:          time.Second * time.Duration(config.ViewLimitSeconds),
-	}))
+	})))
 	if BUILD == "release" {
 		r.NotFound = http.RedirectHandler("/", http.StatusTemporaryRedirect)
 	}
@@ -129,9 +131,13 @@ func main() {
 	log.Fatal(server.ListenAndServe())
 }
 
-func htMainPage(res http.ResponseWriter, req *http.Request) {
-	tmpl := template.Must(template.New("main").Parse(string(assets.MustAsset("view/main.html"))))
-	if err := tmpl.Execute(res, map[string]interface{}{}); err != nil {
-		log.Println(err)
+func htMainPage(antiIndexer *AntiIndexer) func(res http.ResponseWriter, req *http.Request) {
+	return func(res http.ResponseWriter, req *http.Request) {
+		tmpl := template.Must(template.New("main").Parse(string(assets.MustAsset("view/main.html"))))
+		if err := tmpl.Execute(res, map[string]interface{}{
+			"token": antiIndexer.Token(),
+		}); err != nil {
+			log.Println(err)
+		}
 	}
 }
