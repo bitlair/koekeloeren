@@ -65,16 +65,16 @@ func (handler *StreamHandler) ServeHTTP(res http.ResponseWriter, req *http.Reque
 	handler.enum++
 	id := handler.enum
 	ch := make(chan []byte, 1)
-	handler.consumers[id] = ch
 	if handler.options.NumViewersCallback != nil {
 		if err := handler.options.NumViewersCallback(len(handler.consumers)); err != nil {
 			res.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprintf(res, "%v", err)
-			handler.lock.Unlock()
 			close(ch)
+			handler.lock.Unlock()
 			return
 		}
 	}
+	handler.consumers[id] = ch
 	handler.lock.Unlock()
 
 	defer func() {
