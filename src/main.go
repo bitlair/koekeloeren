@@ -94,13 +94,13 @@ func main() {
 
 	stream, err := FFmpegStream(config.FFmpegSource, config.FFmpegFilters)
 	if err != nil {
-		log.Println(err)
+		log.Fatalf("Error opening stream: %v", err)
 		return
 	}
 
 	mqttc := client.New(&client.Options{
 		ErrorHandler: func(err error) {
-			log.Println(err)
+			log.Printf("MQTT error: %v", err)
 		},
 	})
 	if err := mqttc.Connect(&client.ConnectOptions{
@@ -120,12 +120,12 @@ func main() {
 			if entry.Image != "" {
 				fd, err := os.Open(entry.Image)
 				if err != nil {
-					log.Println(err)
+					log.Printf("Error loading mqtt denial image: %v", err)
 				} else {
 					defer fd.Close()
 					i, _, err := image.Decode(fd)
 					if err != nil {
-						log.Println(err)
+						log.Printf("Error loading mqtt denial image: %v", err)
 					} else {
 						img = i
 					}
@@ -179,13 +179,13 @@ func main() {
 		AfterLimit: func() image.Image {
 			fd, err := os.Open(config.AfterLimitImage)
 			if err != nil {
-				log.Println(err)
+				log.Printf("Error loading after limit image: %v", err)
 				return nil
 			}
 			defer fd.Close()
 			img, _, err := image.Decode(fd)
 			if err != nil {
-				log.Println(err)
+				log.Printf("Error loading after limit image: %v", err)
 				return nil
 			}
 			return img
