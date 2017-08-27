@@ -31,8 +31,9 @@ type Config struct {
 	Address string
 	URLRoot string
 
-	FFmpegSource  string
-	FFmpegFilters string
+	ViewLimitSeconds int
+	FFmpegSource     string
+	FFmpegFilters    string
 }
 
 type AssetServeHandler struct {
@@ -111,6 +112,7 @@ func main() {
 	r.HandlerFunc("GET", "/hoofdruimte", htMainPage)
 	r.Handler("GET", "/hoofdruimte.mjpg", NewStreamHandler(stream, &StreamHandlerOptions{
 		NumViewersCallback: numViewersCallback,
+		ViewLimit:          time.Second * time.Duration(config.ViewLimitSeconds),
 	}))
 	if BUILD == "release" {
 		r.NotFound = http.RedirectHandler("/", http.StatusTemporaryRedirect)
