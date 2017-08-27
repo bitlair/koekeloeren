@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"log"
 	"mime"
 	"net/http"
@@ -32,12 +35,14 @@ type Config struct {
 	URLRoot string
 
 	ViewLimitSeconds int
+	AfterLimitImage  string
 	FFmpegSource     string
 	FFmpegFilters    string
 
 	MQTTDeny []struct {
 		Topic string
 		Value string
+		Image string
 	}
 }
 
@@ -105,15 +110,34 @@ func main() {
 		log.Fatal(err)
 	}
 
+	var denyImage image.Image
 	denyBits := make([]bool, len(config.MQTTDeny))
 	subReqs := make([]*client.SubReq, len(config.MQTTDeny))
 	for i, entry := range config.MQTTDeny {
 		func(i int, topic, value string) {
+			var img image.Image
+			if entry.Image != "" {
+				fd, err := os.Open(entry.Image)
+				if err != nil {
+					log.Println(err)
+				} else {
+					defer fd.Close()
+					i, _, err := image.Decode(fd)
+					if err != nil {
+						log.Println(err)
+					} else {
+						img = i
+					}
+				}
+			}
 			subReqs[i] = &client.SubReq{
 				TopicFilter: []byte(topic),
 				QoS:         mqtt.QoS1,
 				Handler: func(topicName, message []byte) {
 					denyBits[i] = string(message) == value
+					if denyBits[i] && img != nil {
+						denyImage = img
+					}
 				},
 			}
 			log.Printf("Added MQTT deny rule: %s == %q", topic, value)
@@ -135,12 +159,12 @@ func main() {
 			Message:   []byte(fmt.Sprintf("%d", num)),
 		})
 	}
-	viewingAllowedCallback := func() bool {
+	viewingAllowedCallback := func() (bool, image.Image) {
 		denied := false
 		for _, b := range denyBits {
 			denied = denied || b
 		}
-		return !denied
+		return !denied, denyImage
 	}
 
 	antiIndexer := NewAntiIndexer()
@@ -151,6 +175,20 @@ func main() {
 		NumViewersCallback:     numViewersCallback,
 		ViewingAllowedCallback: viewingAllowedCallback,
 		ViewLimit:              time.Second * time.Duration(config.ViewLimitSeconds),
+		AfterLimit: func() image.Image {
+			fd, err := os.Open(config.AfterLimitImage)
+			if err != nil {
+				log.Println(err)
+				return nil
+			}
+			defer fd.Close()
+			img, _, err := image.Decode(fd)
+			if err != nil {
+				log.Println(err)
+				return nil
+			}
+			return img
+		}(),
 	})))
 	if BUILD == "release" {
 		r.NotFound = http.RedirectHandler("/", http.StatusTemporaryRedirect)

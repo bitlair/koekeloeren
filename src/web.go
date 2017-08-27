@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"image"
 	"image/jpeg"
-	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -27,9 +26,11 @@ type StreamHandlerOptions struct {
 	// changes. It may return an error to prevent the stream from being viewed.
 	NumViewersCallback func(int) error
 	// A function called to check whether playback of the stream is allowed.
-	ViewingAllowedCallback func() bool
+	ViewingAllowedCallback func() (bool, image.Image)
 	// The duration after which the stream will be closed.
 	ViewLimit time.Duration
+	// An image to display after the view limit has been reached.
+	AfterLimit image.Image
 }
 
 func NewStreamHandler(stream <-chan image.Image, options *StreamHandlerOptions) *StreamHandler {
@@ -97,17 +98,36 @@ func (handler *StreamHandler) ServeHTTP(res http.ResponseWriter, req *http.Reque
 		if handler.options.ViewLimit != 0 && time.Since(viewStart) >= handler.options.ViewLimit {
 			break
 		}
-		if cb := handler.options.ViewingAllowedCallback; cb != nil && !cb() {
-			break
+		if cb := handler.options.ViewingAllowedCallback; cb != nil {
+			allowed, img := cb()
+			if !allowed {
+				var imgBuf bytes.Buffer
+				jpeg.Encode(&imgBuf, img, &jpeg.Options{Quality: 100})
+				fmt.Fprintf(res, "Content-Type: image/jpeg\n")
+				fmt.Fprintf(res, "Content-Length: %d\n", imgBuf.Len())
+				fmt.Fprintf(res, "\n")
+				res.Write(imgBuf.Bytes())
+				fmt.Fprintf(res, "%s\n", BOUNDARY)
+				continue
+			}
 		}
 
 		fmt.Fprintf(res, "Content-Type: image/jpeg\n")
 		fmt.Fprintf(res, "Content-Length: %d\n", len(imgBuf))
 		fmt.Fprintf(res, "\n")
 		if _, err := res.Write(imgBuf); err != nil {
-			log.Println(err)
-			break
+			return
 		}
+		fmt.Fprintf(res, "%s\n", BOUNDARY)
+	}
+
+	if handler.options.AfterLimit != nil {
+		var imgBuf bytes.Buffer
+		jpeg.Encode(&imgBuf, handler.options.AfterLimit, &jpeg.Options{Quality: 100})
+		fmt.Fprintf(res, "Content-Type: image/jpeg\n")
+		fmt.Fprintf(res, "Content-Length: %d\n", imgBuf.Len())
+		fmt.Fprintf(res, "\n")
+		res.Write(imgBuf.Bytes())
 		fmt.Fprintf(res, "%s\n", BOUNDARY)
 	}
 }
