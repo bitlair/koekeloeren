@@ -41,6 +41,7 @@ func NewStreamHandler(stream <-chan image.Image) *StreamHandler {
 
 func (handler *StreamHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	const BOUNDARY = "--jpegBoundary"
+	res.Header().Set("X-Accel-Buffering", "no")
 	res.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary="+BOUNDARY)
 	res.WriteHeader(http.StatusOK)
 
@@ -61,12 +62,13 @@ func (handler *StreamHandler) ServeHTTP(res http.ResponseWriter, req *http.Reque
 	}()
 
 	for imgBuf := range ch {
-		res.Write([]byte(BOUNDARY))
-		res.Write([]byte("Content-Type: image/jpeg\n"))
-		fmt.Fprintf(res, "Content-Length: %d\n\n", len(imgBuf))
+		fmt.Fprintf(res, "Content-Type: image/jpeg\n")
+		fmt.Fprintf(res, "Content-Length: %d\n", len(imgBuf))
+		fmt.Fprintf(res, "\n")
 		if _, err := res.Write(imgBuf); err != nil {
 			log.Println(err)
 			break
 		}
+		fmt.Fprintf(res, "%s\n", BOUNDARY)
 	}
 }
