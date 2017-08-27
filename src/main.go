@@ -106,7 +106,7 @@ func main() {
 	if err := mqttc.Connect(&client.ConnectOptions{
 		Network:  "tcp",
 		Address:  "mqtt.bitlair.nl:1883",
-		ClientID: []byte("koekeloeren"),
+		ClientID: []byte(fmt.Sprintf("koekeloeren-%d", os.Getpid())),
 	}); err != nil {
 		log.Fatal(err)
 	}
