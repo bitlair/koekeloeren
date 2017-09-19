@@ -8,6 +8,7 @@ import (
 	"image/jpeg"
 	"log"
 	"os/exec"
+	"time"
 )
 
 type FFmpegStream struct {
@@ -61,9 +62,11 @@ func (ff *FFmpegStream) open() error {
 				continue
 			}
 
+			timeout := time.NewTimer(time.Second)
 			select {
 			case ff.Stream <- img:
-			default:
+				timeout.Stop()
+			case <-timeout.C:
 				// No one seems to be interested in our stream. Pause it by
 				// killing FFmpeg and resume when the next send succeeds.
 				go func() {
