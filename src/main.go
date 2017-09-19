@@ -92,7 +92,7 @@ func main() {
 		sort.Strings(a)
 	}
 
-	stream, err := FFmpegStream(config.FFmpegSource, config.FFmpegFilters)
+	ffmpeg, err := NewFFmpegStream(config.FFmpegSource, config.FFmpegFilters)
 	if err != nil {
 		log.Fatalf("Error opening stream: %v", err)
 		return
@@ -172,7 +172,7 @@ func main() {
 
 	r.Handler("GET", "/", http.RedirectHandler("/space", http.StatusFound))
 	r.HandlerFunc("GET", "/space", htMainPage(antiIndexer))
-	r.Handler("GET", "/space.mjpg", antiIndexer.Protect(NewStreamHandler(stream, &StreamHandlerOptions{
+	r.Handler("GET", "/space.mjpg", antiIndexer.Protect(NewStreamHandler(ffmpeg.Stream, &StreamHandlerOptions{
 		NumViewersCallback:     numViewersCallback,
 		ViewingAllowedCallback: viewingAllowedCallback,
 		ViewLimit:              time.Second * time.Duration(config.ViewLimitSeconds),

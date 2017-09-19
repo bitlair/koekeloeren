@@ -18,6 +18,7 @@ type StreamHandler struct {
 	stream    <-chan image.Image
 	consumers map[uint64]chan<- []byte
 	lock      sync.Mutex
+	cond      *sync.Cond
 	enum      uint64
 	options   *StreamHandlerOptions
 }
@@ -43,8 +44,16 @@ func NewStreamHandler(stream <-chan image.Image, options *StreamHandlerOptions) 
 		consumers: map[uint64]chan<- []byte{},
 		options:   options,
 	}
+	handler.cond = sync.NewCond(&handler.lock)
 	go func() {
 		for img := range stream {
+			handler.lock.Lock()
+			// Block the image stream until anyone is interested.
+			for len(handler.consumers) == 0 {
+				handler.cond.Wait()
+			}
+			handler.lock.Unlock()
+
 			var buf bytes.Buffer
 			jpeg.Encode(&buf, img, nil)
 			handler.lock.Lock()
@@ -80,6 +89,7 @@ func (handler *StreamHandler) ServeHTTP(res http.ResponseWriter, req *http.Reque
 	}
 	handler.consumers[id] = ch
 	handler.lock.Unlock()
+	handler.cond.Broadcast()
 
 	defer func() {
 		handler.lock.Lock()

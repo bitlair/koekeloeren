@@ -10,43 +10,47 @@ import (
 	"os/exec"
 )
 
-func FFmpegStream(source string, videoFilters string) (<-chan image.Image, error) {
+type FFmpegStream struct {
+	Stream chan image.Image
+
+	source       string
+	videoFilters string
+}
+
+func NewFFmpegStream(source string, videoFilters string) (*FFmpegStream, error) {
+	ff := &FFmpegStream{
+		Stream:       make(chan image.Image, 0),
+		source:       source,
+		videoFilters: videoFilters,
+	}
+	if err := ff.open(); err != nil {
+		return nil, err
+	}
+	return ff, nil
+}
+
+func (ff *FFmpegStream) open() error {
 	cmd := exec.Command(
 		"ffmpeg",
-		"-i", source,
+		"-i", ff.source,
 		"-q:v", "1",
 		"-an",
-		"-vf", videoFilters,
+		"-vf", ff.videoFilters,
 		"-y",
 		"-f", "image2",
 		"-vcodec", "mjpeg",
 		"-updatefirst", "1",
 		"-",
 	)
-	channel := make(chan image.Image, 0)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	go func() {
-		defer close(channel)
 		scanner := bufio.NewScanner(stdout)
 		scanner.Buffer([]byte{}, 1<<22) // 4MiB
-		scanner.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
-			if len(data) <= 3 {
-				return 0, nil, nil
-			}
-			if !bytes.Equal(data[0:3], []byte{0xff, 0xd8, 0xff}) {
-				return 0, nil, fmt.Errorf("Uprocessed data found in stream")
-			}
-			for i := range data[:len(data)-2] {
-				if bytes.Equal(data[i:i+2], []byte{0xff, 0xd9}) {
-					return i + 2, data[:i+2], nil
-				}
-			}
-			return 0, nil, nil
-		})
+		scanner.Split(splitJpegs)
 
 		for scanner.Scan() {
 			img, err := jpeg.Decode(bytes.NewReader(scanner.Bytes()))
@@ -55,19 +59,42 @@ func FFmpegStream(source string, videoFilters string) (<-chan image.Image, error
 				// keyframe yet, which somehow results in broken frames.
 				continue
 			}
+
 			select {
-			case channel <- img:
+			case ff.Stream <- img:
 			default:
+				// No one seems to be interested in our stream. Pause it by
+				// killing FFmpeg and resume when the next send succeeds.
+				go func() {
+					ff.Stream <- img
+					ff.open()
+				}()
+				cmd.Process.Kill()
+				return
 			}
 		}
 		if err := scanner.Err(); err != nil {
 			log.Printf("Scanner error: %v", err)
 		}
 		log.Println("FFmpeg exited")
+		ff.open() // Reconnect.
 	}()
+	return cmd.Start()
+}
 
-	if err := cmd.Start(); err != nil {
-		return nil, err
+// A splitter function for a bufio.Scanner that splits a stream of multiple
+// concatenated JPEG images.
+func splitJpegs(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if len(data) <= 3 {
+		return 0, nil, nil
 	}
-	return channel, nil
+	if !bytes.Equal(data[0:3], []byte{0xff, 0xd8, 0xff}) {
+		return 0, nil, fmt.Errorf("Uprocessed data found in stream")
+	}
+	for i := range data[:len(data)-2] {
+		if bytes.Equal(data[i:i+2], []byte{0xff, 0xd9}) {
+			return i + 2, data[:i+2], nil
+		}
+	}
+	return 0, nil, nil
 }
