@@ -48,6 +48,7 @@ func (ff *FFmpegStream) open() error {
 		return err
 	}
 	go func() {
+		defer cmd.Wait()
 		scanner := bufio.NewScanner(stdout)
 		scanner.Buffer([]byte{}, 1<<22) // 4MiB
 		scanner.Split(splitJpegs)
