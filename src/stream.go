@@ -70,7 +70,7 @@ func (ff *FFmpegStream) open() error {
 				// No one seems to be interested in our stream. Pause it by
 				// killing FFmpeg and resume when the next send succeeds.
 				go func() {
-					ff.Stream <- img
+					ff.Stream <- nil
 					ff.open()
 				}()
 				cmd.Process.Kill()

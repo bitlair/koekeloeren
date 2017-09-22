@@ -47,12 +47,10 @@ func NewStreamHandler(stream <-chan image.Image, options *StreamHandlerOptions) 
 	handler.cond = sync.NewCond(&handler.lock)
 	go func() {
 		for img := range stream {
-			handler.lock.Lock()
-			// Block the image stream until anyone is interested.
-			for len(handler.consumers) == 0 {
-				handler.cond.Wait()
+			// The stream may send a nil frame when it's probing for the pipeline to continue.
+			if img == nil {
+				continue
 			}
-			handler.lock.Unlock()
 
 			var buf bytes.Buffer
 			jpeg.Encode(&buf, img, nil)
@@ -62,6 +60,11 @@ func NewStreamHandler(stream <-chan image.Image, options *StreamHandlerOptions) 
 				case ch <- buf.Bytes():
 				default:
 				}
+			}
+
+			// Block the image stream until anyone is interested.
+			for len(handler.consumers) == 0 {
+				handler.cond.Wait()
 			}
 			handler.lock.Unlock()
 		}
